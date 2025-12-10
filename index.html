@@ -42,8 +42,9 @@
         ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
         
-        /* World Transition Effect */
+        /* World Transition Effect Styles */
         .snow-mode #canvas-container { filter: brightness(1.1) contrast(0.9); }
+        .space-mode #canvas-container { filter: sepia(0.2) contrast(1.2) brightness(0.9); }
     </style>
 </head>
 <body>
@@ -53,6 +54,36 @@
     <!-- UI Layer -->
     <div id="ui-layer" class="flex flex-col justify-between p-6">
         
+        <!-- ADMIN PANEL (Hidden by default) -->
+        <div id="admin-panel" class="absolute top-20 left-4 bg-gray-900/95 text-white border-2 border-red-500 rounded-lg shadow-2xl p-0 w-64 pointer-events-auto hidden z-50 font-mono">
+            <div class="flex justify-between items-center bg-red-600/80 p-2 rounded-t-md cursor-default select-none" id="admin-header">
+                <span class="font-bold flex items-center gap-2"><span class="text-xs">⚡</span> ADMIN PANEL</span>
+                <button id="admin-minimize" class="text-xs bg-black/30 px-2 py-1 rounded hover:bg-black/50 font-bold">_</button>
+            </div>
+            <div id="admin-body" class="p-4 space-y-4">
+                <!-- Money Controls -->
+                <div class="bg-gray-800/50 p-2 rounded border border-gray-700">
+                    <label class="text-[10px] text-gray-400 uppercase font-bold tracking-wider block mb-1">Money Hack</label>
+                    <div class="flex gap-2 mb-2">
+                        <input type="number" id="admin-money-input" class="w-full bg-black/50 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:border-red-500 outline-none" placeholder="Amount">
+                        <button id="admin-add-money" class="bg-green-600 hover:bg-green-500 text-xs px-2 rounded font-bold">ADD</button>
+                        <button id="admin-set-money" class="bg-blue-600 hover:bg-blue-500 text-xs px-2 rounded font-bold">SET</button>
+                    </div>
+                    <button id="admin-inf-money" class="w-full bg-yellow-600 hover:bg-yellow-500 text-xs py-1 rounded font-bold text-black">SET INFINITE ($∞)</button>
+                </div>
+                <!-- World Controls -->
+                <div class="bg-gray-800/50 p-2 rounded border border-gray-700">
+                    <label class="text-[10px] text-gray-400 uppercase font-bold tracking-wider block mb-1">Teleport</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button class="admin-world-btn bg-green-700 hover:bg-green-600 text-xs py-2 rounded font-bold transition-colors" data-world="PLAINS">PLAINS</button>
+                        <button class="admin-world-btn bg-cyan-700 hover:bg-cyan-600 text-xs py-2 rounded font-bold transition-colors" data-world="SNOW">SNOW</button>
+                        <button class="admin-world-btn bg-purple-700 hover:bg-purple-600 text-xs py-2 rounded font-bold transition-colors" data-world="SPACE">SPACE</button>
+                    </div>
+                </div>
+                <div class="text-[10px] text-gray-500 text-center">v1.1.0 - Upgrades Update</div>
+            </div>
+        </div>
+
         <!-- Top HUD -->
         <div class="flex justify-between items-start w-full">
             <div class="bg-gray-900/80 backdrop-blur text-white p-4 rounded-2xl shadow-2xl border border-gray-700 pointer-events-auto flex flex-col min-w-[150px]">
@@ -68,12 +99,12 @@
             </div>
         </div>
 
-        <!-- Shop Tier Toggle Button (Replaces 3D Arrow) -->
+        <!-- Shop Tier Toggle Button -->
         <div class="absolute top-32 right-10 pointer-events-auto">
              <button id="shop-tier-btn" class="bg-white/10 hover:bg-white/20 backdrop-blur text-white p-4 rounded-full text-xl transition-all hover:scale-110 shadow-lg border border-white/10 flex flex-col items-center gap-1 hidden">
                 <span class="font-bold text-xs uppercase text-yellow-300">More Seeds</span>
                 <span class="text-3xl">&uarr;</span>
-                <span class="text-[10px] text-gray-300">(Press W)</span>
+                <span class="text-[10px] text-gray-300">(W / S)</span>
             </button>
         </div>
 
@@ -113,21 +144,25 @@
         setLogLevel('Silent');
 
         const toFirestoreData = (state) => ({
-            money: state.money,
+            money: state.money === Infinity ? 'INFINITY' : state.money, 
             inventory: state.inventory,
             plainsGrid: JSON.stringify(state.plainsGrid),
             snowGrid: JSON.stringify(state.snowGrid),
+            spaceGrid: JSON.stringify(state.spaceGrid), 
             currentWorld: state.currentWorld,
-            portalUnlocked: state.portalUnlocked
+            portalUnlocked: state.portalUnlocked,
+            growthLevel: state.growthLevel // New Field
         });
 
         const fromFirestoreData = (data) => ({
-            money: data.money || 0,
+            money: data.money === 'INFINITY' ? Infinity : (data.money || 0),
             inventory: data.inventory || {},
             plainsGrid: data.plainsGrid ? JSON.parse(data.plainsGrid) : window.GAME_STATE.plainsGrid,
             snowGrid: data.snowGrid ? JSON.parse(data.snowGrid) : window.GAME_STATE.snowGrid,
+            spaceGrid: data.spaceGrid ? JSON.parse(data.spaceGrid) : window.GAME_STATE.spaceGrid, 
             currentWorld: data.currentWorld || 'PLAINS',
-            portalUnlocked: data.portalUnlocked || false
+            portalUnlocked: data.portalUnlocked || false,
+            growthLevel: data.growthLevel || 1 // Default level 1
         });
 
         const initFirebase = async () => {
@@ -186,88 +221,320 @@
             'starfruit': { name: 'Starfruit', color: 0xfef08a, cost: 2500, sell: 6000, growthTime: 40000, tier: 2, world: 'PLAINS', icon: '⭐' },
             'ancient': { name: 'Ancient', color: 0xa855f7, cost: 10000, sell: 25000, growthTime: 60000, tier: 2, world: 'PLAINS', icon: '🟣' },
             
-            // Snow World Crops
+            // Tier 3 (Snow Basic)
             'dragonfruit': { name: 'Dragonfruit', color: 0xdb2777, cost: 20000, sell: 50000, growthTime: 30000, tier: 3, world: 'SNOW', icon: '🐉' },
             'ice_shard': { name: 'Ice Shard', color: 0x06b6d4, cost: 50000, sell: 120000, growthTime: 45000, tier: 3, world: 'SNOW', icon: '🧊' },
-            'void_root': { name: 'Void Root', color: 0x4c1d95, cost: 100000, sell: 250000, growthTime: 60000, tier: 3, world: 'SNOW', icon: '⚫' }
+            'aurora_berry': { name: 'Aurora Berry', color: 0x86efac, cost: 100000, sell: 250000, growthTime: 60000, tier: 3, world: 'SNOW', icon: '🌌' },
+            
+            // Tier 4 (Snow Exotic)
+            'frostfire': { name: 'Frostfire', color: 0xff4500, cost: 250000, sell: 600000, growthTime: 80000, tier: 4, world: 'SNOW', icon: '🔥' },
+            'crystal_rose': { name: 'Crystal Rose', color: 0xe0f2fe, cost: 500000, sell: 1200000, growthTime: 100000, tier: 4, world: 'SNOW', icon: '💎' },
+            'void_root': { name: 'Void Root', color: 0x4c1d95, cost: 1000000, sell: 2500000, growthTime: 120000, tier: 4, world: 'SNOW', icon: '⚫' },
+            
+            // Tier 5 (Space)
+            'solar_orb': { name: 'Solar Orb', color: 0xfde047, cost: 3000000, sell: 7000000, growthTime: 150000, tier: 5, world: 'SPACE', icon: '☀️' },
+            'gravity_seed': { name: 'Gravity Seed', color: 0x6d28d9, cost: 7500000, sell: 18000000, growthTime: 180000, tier: 5, world: 'SPACE', icon: '🕳️' },
+            'nebulite': { name: 'Nebulite', color: 0xf472b6, cost: 15000000, sell: 35000000, growthTime: 240000, tier: 5, world: 'SPACE', icon: '💫' }
         };
 
         // --- Global State ---
         window.GAME_STATE = {
             money: 100,
             inventory: { 'carrot_seed': 2 },
-            // Two separate grids for two worlds
             plainsGrid: Array(3).fill().map(() => Array(3).fill({ planted: null, stage: 0, plantTime: 0 })),
             snowGrid: Array(3).fill().map(() => Array(3).fill({ planted: null, stage: 0, plantTime: 0 })),
-            
-            currentWorld: 'PLAINS', // 'PLAINS' or 'SNOW'
+            spaceGrid: Array(3).fill().map(() => Array(3).fill({ planted: null, stage: 0, plantTime: 0 })), 
+            currentWorld: 'PLAINS', 
             portalUnlocked: false,
-            
             targetView: 'GARDEN',
-            shopTier: 1
+            shopTier: 1,
+            growthLevel: 1 // Default level 1
         };
-
-        // --- Input Handling ---
-        let keyBuffer = '';
-        const cheatCode = 'haxxor';
-        
-        window.addEventListener('keydown', (e) => {
-            const key = e.key.toLowerCase();
-            
-            // Cheat Code
-            keyBuffer += key;
-            if (keyBuffer.length > cheatCode.length) keyBuffer = keyBuffer.slice(-cheatCode.length);
-            if (keyBuffer === cheatCode) {
-                window.GAME_STATE.money += 1000000;
-                window.updateGameState(window.GAME_STATE);
-                const el = document.getElementById('message-box');
-                el.textContent = "CHEAT ACTIVATED: +$1,000,000";
-                el.classList.remove('opacity-0'); el.classList.add('bg-purple-500');
-                setTimeout(() => { el.classList.add('opacity-0'); el.classList.remove('bg-purple-500'); }, 3000);
-            }
-
-            // WASD Navigation
-            const state = window.GAME_STATE;
-            if (key === 'a') {
-                if (state.targetView === 'SHOP') { state.targetView = 'GARDEN'; updateUIVisibility(); }
-                else if (state.targetView === 'PORTAL') { state.targetView = 'SHOP'; updateUIVisibility(); }
-            }
-            if (key === 'd') {
-                if (state.targetView === 'GARDEN') { state.targetView = 'SHOP'; updateUIVisibility(); if(inventoryOpen) toggleInventory(); }
-                else if (state.targetView === 'SHOP') { state.targetView = 'PORTAL'; updateUIVisibility(); }
-            }
-            if (key === 'w') {
-                if (state.targetView === 'PORTAL') {
-                     handlePortalInteraction();
-                } else if (state.targetView === 'SHOP') {
-                     document.getElementById('shop-tier-btn').click();
-                } else if (state.targetView === 'GARDEN') {
-                     toggleInventory();
-                }
-            }
-        });
 
         // --- 3D Scene Variables ---
         let scene, camera, renderer, raycaster, mouse, textureLoader;
         const plots = []; 
         let shopItems = [];
-        let crateMesh, portalMesh;
+        let crateMesh, portalRightMesh, portalLeftMesh, upgradeStandMesh;
         let isDragging = false;
         let dragItemType = null;
         let inventoryOpen = false;
-        let shopArrowRight;
-        let grassTexture, dirtTexture, woodTexture, snowTexture;
+        let shopArrowRight, gardenArrowLeft; 
+        let grassTexture, dirtTexture, woodTexture, snowTexture, spaceGroundTexture, obsidianTexture;
         let groundMesh, envFog;
-        let treeMaterials = []; // To update trees when world changes
+        let floraGroup, floraPositions = []; 
+        let spaceDecorations = []; 
 
-        // --- Core Logic ---
+        // --- Core Logic & UI Helpers ---
         
-        const getCurrentGrid = () => window.GAME_STATE.currentWorld === 'SNOW' ? window.GAME_STATE.snowGrid : window.GAME_STATE.plainsGrid;
+        const getCurrentGrid = () => {
+             if (window.GAME_STATE.currentWorld === 'SNOW') return window.GAME_STATE.snowGrid;
+             if (window.GAME_STATE.currentWorld === 'SPACE') return window.GAME_STATE.spaceGrid;
+             return window.GAME_STATE.plainsGrid;
+        }
 
+        const getGrowthMultiplier = () => {
+            // Level 1 = 1x, Level 2 = 1.25x, Level 3 = 1.5x...
+            return 1 + (0.25 * (window.GAME_STATE.growthLevel - 1));
+        }
+
+        const getUpgradeCost = () => {
+            // Cost starts at 500, doubles every level: 500, 1000, 2000...
+            return 500 * Math.pow(2, window.GAME_STATE.growthLevel - 1);
+        }
+
+        const updateUIVisibility = () => {
+            const navLeft = document.getElementById('nav-left');
+            const navRight = document.getElementById('nav-right');
+            const tierBtn = document.getElementById('shop-tier-btn');
+            
+            if (!navLeft || !navRight || !tierBtn) return;
+
+            const view = window.GAME_STATE.targetView;
+            const currentWorld = window.GAME_STATE.currentWorld;
+            
+            navLeft.classList.add('hidden');
+            navRight.classList.add('hidden');
+            tierBtn.classList.add('hidden'); 
+
+            if (view === 'GARDEN') {
+                navRight.classList.remove('hidden'); // To UPGRADES
+                if (currentWorld === 'SNOW' || currentWorld === 'SPACE') navLeft.classList.remove('hidden'); 
+            } else if (view === 'UPGRADES') {
+                navLeft.classList.remove('hidden'); // To GARDEN
+                navRight.classList.remove('hidden'); // To SHOP
+            } else if (view === 'SHOP') {
+                navLeft.classList.remove('hidden'); // To UPGRADES
+                if (currentWorld !== 'SPACE') navRight.classList.remove('hidden'); // To PORTAL_R
+                
+                if (currentWorld === 'PLAINS' || currentWorld === 'SNOW') tierBtn.classList.remove('hidden');
+                
+                const isUpper = (window.GAME_STATE.shopTier % 2 === 0);
+                const arrowSpan = tierBtn.querySelector('span:nth-child(2)');
+                const textSpan = tierBtn.querySelector('span:first-child');
+                if(arrowSpan) arrowSpan.innerHTML = isUpper ? '&darr;' : '&uarr;';
+                
+                if (currentWorld === 'PLAINS') textSpan.textContent = isUpper ? 'Basic Seeds' : 'Exotic Seeds';
+                if (currentWorld === 'SNOW') textSpan.textContent = isUpper ? 'Basic Frost' : 'Exotic Frost';
+
+            } else if (view === 'PORTAL_R') {
+                navLeft.classList.remove('hidden'); 
+            } else if (view === 'PORTAL_L') {
+                navRight.classList.remove('hidden'); 
+            }
+        };
+
+        const updateEnvironmentVisuals = () => {
+            const currentWorld = window.GAME_STATE.currentWorld;
+            document.body.classList.toggle('snow-mode', currentWorld === 'SNOW');
+            document.body.classList.toggle('space-mode', currentWorld === 'SPACE');
+            
+            spaceDecorations.forEach(d => scene.remove(d));
+            spaceDecorations = [];
+
+            if (groundMesh) {
+                if (currentWorld === 'SNOW') {
+                    groundMesh.material.map = snowTexture;
+                    groundMesh.material.color.setHex(0xffffff); 
+                    scene.background.setHex(0xcfd8dc); 
+                    scene.fog.color.setHex(0xcfd8dc);
+                } else if (currentWorld === 'SPACE') {
+                    groundMesh.material.map = obsidianTexture; 
+                    groundMesh.material.color.setHex(0xffffff); 
+                    scene.background.setHex(0x000000);
+                    scene.fog.color.setHex(0x000000);
+                    generateSpaceDecorations();
+                }
+                 else {
+                    groundMesh.material.map = grassTexture;
+                    groundMesh.material.color.setHex(0xffffff);
+                    scene.background.setHex(0x87CEEB);
+                    scene.fog.color.setHex(0x87CEEB);
+                }
+                groundMesh.material.needsUpdate = true;
+            }
+
+            generateFlora();
+
+            // Hide/Show navigation arrows for portal
+            if (currentWorld === 'PLAINS') {
+                if(portalRightMesh) portalRightMesh.position.set(36, 0, 0); // Moved further right
+                if(shopArrowRight) shopArrowRight.visible = true;
+                if(gardenArrowLeft) gardenArrowLeft.visible = false;
+            } else if (currentWorld === 'SNOW') {
+                if(portalRightMesh) portalRightMesh.position.set(36, 0, 0); 
+                if(portalLeftMesh) portalLeftMesh.position.set(-15, 0, 0); 
+                if(shopArrowRight) shopArrowRight.visible = true; 
+                if(gardenArrowLeft) gardenArrowLeft.visible = true; 
+            } else if (currentWorld === 'SPACE') {
+                if(portalRightMesh) portalRightMesh.position.set(36, 0, 0); 
+                if(portalLeftMesh) portalLeftMesh.position.set(-15, 0, 0);
+                if(shopArrowRight) shopArrowRight.visible = false; 
+                if(gardenArrowLeft) gardenArrowLeft.visible = true;
+            }
+
+            // Update portal look
+            if (portalRightMesh) {
+                 const glowMesh = portalRightMesh.children[1];
+                 portalRightMesh.visible = (currentWorld !== 'SPACE');
+                 if(currentWorld === 'PLAINS') { glowMesh.material.color.setHex(0x00ffff); } // to Snow
+                 else if(currentWorld === 'SNOW') { glowMesh.material.color.setHex(0xa855f7); } // to Space
+                 
+                 const isUnlocked = (currentWorld === 'PLAINS' ? window.GAME_STATE.unlockedSnow : window.GAME_STATE.unlockedSpace);
+                 if(!isUnlocked) {
+                     glowMesh.material.color.setHex(0x000000);
+                     glowMesh.material.opacity = 1.0;
+                 } else {
+                     glowMesh.material.opacity = 0.6;
+                 }
+            }
+            if (portalLeftMesh) {
+                portalLeftMesh.visible = (currentWorld !== 'PLAINS');
+                if (portalLeftMesh.visible) {
+                    const glowMesh = portalLeftMesh.children[1];
+                    const targetColor = (currentWorld === 'SNOW') ? 0x4ade80 : 0x00ffff; // Green or Cyan
+                    glowMesh.material.color.setHex(targetColor);
+                    glowMesh.material.opacity = 0.6;
+                }
+            }
+
+            // Update Upgrade Sign
+            if (upgradeStandMesh) {
+                const textPlane = upgradeStandMesh.userData.signText;
+                if(textPlane) textPlane.material.map = createUpgradeSignTexture();
+            }
+        };
+
+        const generateFlora = () => {
+            if (!floraGroup) return;
+            while (floraGroup.children.length > 0) { 
+                floraGroup.remove(floraGroup.children[0]); 
+            }
+
+            const currentWorld = window.GAME_STATE.currentWorld;
+            const woodMat = new THREE.MeshStandardMaterial({ map: woodTexture });
+            const leafMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.9 });
+            const rockMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9, flatShading: true });
+
+            floraPositions.forEach(pos => {
+                const group = new THREE.Group();
+                group.position.copy(pos.pos);
+                group.scale.set(pos.scale, pos.scale, pos.scale);
+
+                if (currentWorld === 'SPACE') {
+                    // Generate Asteroid
+                    const geoType = Math.random() > 0.5 ? new THREE.DodecahedronGeometry(1) : new THREE.IcosahedronGeometry(1, 0);
+                    const rock = new THREE.Mesh(geoType, rockMat);
+                    rock.position.y = 0.2;
+                    rock.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+                    group.add(rock);
+                } else {
+                    // Generate Tree
+                    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 8), woodMat);
+                    trunk.castShadow = true; 
+                    group.add(trunk);
+                    
+                    const finalLeafMat = leafMat.clone();
+                    if(currentWorld === 'SNOW') finalLeafMat.color.setHex(0xffffff);
+                    
+                    const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.5, 4, 8), finalLeafMat);
+                    leaves.position.y = 2.0; leaves.castShadow = true; 
+                    group.add(leaves);
+                }
+                
+                floraGroup.add(group);
+            });
+        };
+
+        const generateSpaceDecorations = () => {
+            const planetMat = new THREE.MeshStandardMaterial({color: 0xffa07a, emissive: 0xffa07a, emissiveIntensity: 0.1});
+            const starMat = new THREE.MeshStandardMaterial({color: 0xf5f5dc, emissive: 0xf5f5dc, emissiveIntensity: 0.8});
+            const blackHoleMat = new THREE.MeshStandardMaterial({color: 0x000000, side: THREE.BackSide});
+            const ringMat = new THREE.MeshStandardMaterial({color: 0x6a0dad, side: THREE.DoubleSide, transparent: true, opacity: 0.5});
+            
+            const numDecorations = 10;
+            for(let i=0; i<numDecorations; i++) {
+                const type = Math.floor(Math.random() * 4);
+                let mesh;
+                let size = 1 + Math.random() * 2;
+                let x, y, z;
+                let attempts = 0;
+                do {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = 15 + Math.random() * 25;
+                    x = Math.cos(angle) * radius; z = Math.sin(angle) * radius;
+                    y = 5 + Math.random() * 10;
+                    attempts++;
+                    // CHECK: Avoid x=0 (Garden), x=12 (Upgrades), x=24 (Shop)
+                    if (x > -5 && x < 30) attempts = 0; // Force retry if in play area
+                } while (attempts < 20);
+
+                if (type === 0) { 
+                    mesh = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), planetMat.clone());
+                    mesh.material.color.setHex(Math.random() * 0xffffff);
+                    const ring = new THREE.Mesh(new THREE.TorusGeometry(size * 1.5, 0.2, 2, 50), ringMat.clone());
+                    ring.rotation.x = Math.PI / 2; ring.rotation.y = Math.random() * Math.PI;
+                    mesh.add(ring);
+                } else if (type === 1) { 
+                    mesh = new THREE.Mesh(new THREE.SphereGeometry(size * 0.5, 16, 16), starMat.clone());
+                    mesh.material.color.setHex(Math.random() > 0.5 ? 0xffa500 : 0xf5f5dc);
+                } else if (type === 2) { 
+                    mesh = new THREE.Mesh(new THREE.SphereGeometry(size * 0.2, 16, 16), blackHoleMat);
+                    const disc = new THREE.Mesh(new THREE.RingGeometry(size * 0.5, size * 1.5, 32), starMat.clone());
+                    disc.rotation.x = Math.PI / 2; mesh.add(disc);
+                    mesh.userData = { isSpinner: true, spinRate: 0.01 };
+                } else { 
+                    mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(size * 0.5), new THREE.MeshStandardMaterial({color: 0x696969, roughness: 0.9}));
+                }
+                
+                mesh.position.set(x, y, z);
+                mesh.castShadow = true;
+                scene.add(mesh);
+                spaceDecorations.push(mesh);
+            }
+        };
+
+        const renderInventory = () => {
+            const bar = document.getElementById('inventory-bar');
+            if (!bar) return;
+            bar.innerHTML = '';
+            let hasSeeds = false;
+            Object.entries(window.GAME_STATE.inventory).forEach(([key, count]) => {
+                if (count > 0 && key.includes('_seed')) {
+                    hasSeeds = true;
+                    const cropType = key.replace('_seed', '');
+                    const def = CROP_DEFS[cropType];
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = "group flex-shrink-0 w-24 h-24 bg-gray-800 rounded-2xl border-2 border-gray-600 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing hover:bg-gray-700 transition-all hover:scale-105 hover:border-green-500 shadow-lg select-none relative";
+                    itemDiv.innerHTML = `
+                        <div class="text-4xl mb-1 filter drop-shadow-md">${def.icon || '🌱'}</div>
+                        <div class="text-xs font-bold text-gray-300">${def.name}</div>
+                        <div class="absolute -top-2 -right-2 bg-yellow-500 text-black text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-800">${count}</div>
+                    `;
+                    itemDiv.addEventListener('mousedown', (e) => {
+                        e.preventDefault(); isDragging = true; dragItemType = cropType;
+                        const ghost = document.getElementById('drag-ghost');
+                        ghost.style.display = 'flex'; ghost.style.backgroundColor = '#' + def.color.toString(16);
+                        ghost.textContent = def.icon || '🌱'; ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
+                        toggleInventory(); 
+                    });
+                    bar.appendChild(itemDiv);
+                }
+            });
+            if (!hasSeeds) bar.innerHTML = `<div class="text-gray-400 text-sm px-6 py-2 flex items-center"><span>Inventory Empty. Buy seeds at the Shop! &rarr;</span></div>`;
+        };
+
+        // --- Main Update Function ---
         window.updateGameState = (newState, shouldSave = true) => {
             window.GAME_STATE = { ...window.GAME_STATE, ...newState };
-            document.getElementById('money-display').textContent = Math.floor(window.GAME_STATE.money);
-            document.getElementById('world-display').textContent = window.GAME_STATE.currentWorld;
+            const moneyEl = document.getElementById('money-display');
+            if (moneyEl) {
+                if (window.GAME_STATE.money === Infinity) moneyEl.textContent = "∞";
+                else moneyEl.textContent = Math.floor(window.GAME_STATE.money);
+            }
+            
+            const worldEl = document.getElementById('world-display');
+            if (worldEl) worldEl.textContent = window.GAME_STATE.currentWorld;
             
             updateUIVisibility();
             updateEnvironmentVisuals();
@@ -277,6 +544,7 @@
 
         const showMessage = (msg, time=2500) => {
             const el = document.getElementById('message-box');
+            if (!el) return;
             el.textContent = msg;
             el.classList.remove('opacity-0');
             setTimeout(() => el.classList.add('opacity-0'), time);
@@ -305,23 +573,65 @@
             return new THREE.CanvasTexture(canvas);
         }
 
+        const createUpgradeSignTexture = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.fillRect(0, 0, 512, 256);
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 4; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
+            
+            const level = window.GAME_STATE.growthLevel;
+            const cost = getUpgradeCost();
+            
+            ctx.fillStyle = '#ffffff'; ctx.font = 'bold 60px sans-serif'; ctx.fillText("Growing Speed", 256, 60);
+            ctx.fillStyle = '#3b82f6'; ctx.font = 'bold 80px sans-serif'; ctx.fillText(`Level ${level}`, 256, 130);
+            ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 50px sans-serif'; ctx.fillText(`Upgrade: $${cost.toLocaleString()}`, 256, 200);
+            
+            return new THREE.CanvasTexture(canvas);
+        }
+
         const createSnowTexture = () => {
             const canvas = document.createElement('canvas');
             canvas.width = 512; canvas.height = 512;
             const ctx = canvas.getContext('2d');
-            // Base white
             ctx.fillStyle = '#f0f9ff';
             ctx.fillRect(0, 0, 512, 512);
-            // Noise
-            for(let i=0; i<5000; i++) {
-                ctx.fillStyle = `rgba(200, 225, 255, ${Math.random() * 0.3})`;
+            for(let i=0; i<80000; i++) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.5})`;
+                ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+            }
+            for(let i=0; i<20000; i++) {
+                ctx.fillStyle = `rgba(200, 210, 230, ${Math.random() * 0.3})`;
+                ctx.fillRect(Math.random() * 512, Math.random() * 512, 3, 3);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(8, 8);
+            return tex;
+        }
+
+        const createObsidianTexture = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0f0f15'; 
+            ctx.fillRect(0, 0, 512, 512);
+            for(let i=0; i<300; i++) {
+                const shade = Math.floor(Math.random() * 40 + 15);
+                ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade+10})`;
                 ctx.beginPath();
-                ctx.arc(Math.random()*512, Math.random()*512, Math.random()*2 + 1, 0, Math.PI*2);
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const s = Math.random() * 50 + 10;
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + Math.random()*s - s/2, y + Math.random()*s - s/2);
+                ctx.lineTo(x + Math.random()*s - s/2, y + Math.random()*s - s/2);
                 ctx.fill();
             }
             const tex = new THREE.CanvasTexture(canvas);
             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            tex.repeat.set(20, 20);
+            tex.repeat.set(10, 10);
             return tex;
         }
 
@@ -335,6 +645,53 @@
                 const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.3, 4), new THREE.MeshStandardMaterial({ color: 0x16a34a }));
                 leaf.position.y = 0.8; group.add(leaf);
             } 
+            else if (type === 'tomato' || type === 'blueberry') {
+                const bushGeo = new THREE.DodecahedronGeometry(0.4);
+                const bushMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.9 });
+                const bush = new THREE.Mesh(bushGeo, bushMat);
+                bush.position.y = 0.4;
+                group.add(bush);
+                const fruitGeo = new THREE.SphereGeometry(0.12, 8, 8);
+                const fruitMat = new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.3, metalness: 0.1 });
+                const pos = [[0.3, 0.5, 0], [-0.2, 0.6, 0.2], [0, 0.3, -0.3]];
+                pos.forEach(p => {
+                    const fruit = new THREE.Mesh(fruitGeo, fruitMat);
+                    fruit.position.set(...p);
+                    group.add(fruit);
+                });
+            }
+            else if (type === 'corn') {
+                const stalkGeo = new THREE.CylinderGeometry(0.1, 0.1, 1.2, 8);
+                const stalkMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 }); 
+                const stalk = new THREE.Mesh(stalkGeo, stalkMat);
+                stalk.position.y = 0.6;
+                group.add(stalk);
+                const leafGeo = new THREE.BoxGeometry(0.1, 0.4, 0.4);
+                const leafMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.7 });
+                const l1 = new THREE.Mesh(leafGeo, leafMat); l1.position.set(0, 0.5, 0.1); l1.rotation.x = 0.5; group.add(l1);
+                const l2 = new THREE.Mesh(leafGeo, leafMat); l2.position.set(0, 0.8, -0.1); l2.rotation.x = -0.5; group.add(l2);
+            }
+            else if (type === 'pumpkin') {
+                const pumpGeo = new THREE.DodecahedronGeometry(0.5);
+                const pumpMat = new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.8 });
+                const pumpkin = new THREE.Mesh(pumpGeo, pumpMat);
+                pumpkin.scale.y = 0.6; 
+                pumpkin.position.y = 0.3;
+                group.add(pumpkin);
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.2), new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.8 }));
+                stem.position.y = 0.6;
+                group.add(stem);
+            }
+            else if (type === 'melon') {
+                const fruit = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35, 1), new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.6 }));
+                fruit.position.y = 0.4;
+                fruit.scale.x = 1.1; 
+                group.add(fruit);
+                const stem = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.02, 4, 8, 2), new THREE.MeshStandardMaterial({ color: 0x166534 }));
+                stem.rotation.x = Math.PI/2;
+                stem.position.set(0.1, 0.1, 0);
+                group.add(stem);
+            }
             else if (type === 'dragonfruit') {
                  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.1, 0.8, 6), new THREE.MeshStandardMaterial({color: 0x166534}));
                  body.position.y = 0.4; group.add(body);
@@ -359,7 +716,49 @@
                 shape.position.y = 0.5; group.add(shape);
                 shape.userData = { isSpinner: true };
             }
+            else if (type === 'frostfire') {
+                const body = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35), new THREE.MeshStandardMaterial({ color: 0x3b82f6, emissive: 0xff4500, emissiveIntensity: 0.4 }));
+                body.position.y = 0.5; group.add(body);
+                const flame1 = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.5), new THREE.MeshStandardMaterial({ color: 0xff4500 }));
+                flame1.position.set(0.2, 0.7, 0); group.add(flame1);
+                const flame2 = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.5), new THREE.MeshStandardMaterial({ color: 0xff4500 }));
+                flame2.position.set(-0.2, 0.7, 0); group.add(flame2);
+            }
+            else if (type === 'crystal_rose') {
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }));
+                stem.position.y = 0.3; group.add(stem);
+                const flower = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 1), new THREE.MeshStandardMaterial({ color: 0xe0f2fe, roughness: 0, metalness: 0.8 }));
+                flower.position.y = 0.7; group.add(flower);
+            }
+            else if (type === 'aurora_berry') {
+                const bush = new THREE.Mesh(new THREE.SphereGeometry(0.4, 7, 7), new THREE.MeshStandardMaterial({ color: 0x1f2937 }));
+                bush.position.y = 0.4; group.add(bush);
+                const berryMat = new THREE.MeshStandardMaterial({ color: 0x86efac, emissive: 0x86efac, emissiveIntensity: 0.8 });
+                const b1 = new THREE.Mesh(new THREE.SphereGeometry(0.1), berryMat); b1.position.set(0.2, 0.6, 0.2); group.add(b1);
+                const b2 = new THREE.Mesh(new THREE.SphereGeometry(0.1), berryMat); b2.position.set(-0.2, 0.5, -0.1); group.add(b2);
+                const b3 = new THREE.Mesh(new THREE.SphereGeometry(0.1), berryMat); b3.position.set(0, 0.7, -0.2); group.add(b3);
+            }
+            // Space Crops
+            else if (type === 'solar_orb') {
+                const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4), new THREE.MeshStandardMaterial({ color: def.color, emissive: def.color, emissiveIntensity: 0.8 }));
+                orb.position.y = 0.5; group.add(orb);
+                orb.userData = { isSpinner: true, spinRate: 0.02 };
+            }
+            else if (type === 'gravity_seed') {
+                 const shell = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshStandardMaterial({ color: def.color, metalness: 0.5, roughness: 0.2 }));
+                 shell.position.y = 0.4; group.add(shell);
+                 const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.1), new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }));
+                 shell.add(core); // core spins with the shell
+            }
+            else if (type === 'nebulite') {
+                const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), new THREE.MeshStandardMaterial({ color: def.color, emissive: def.color, emissiveIntensity: 0.4, transparent: true, opacity: 0.9 }));
+                body.position.y = 0.5; group.add(body);
+                const glow = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.1, fog: false }));
+                glow.position.y = 0.5; group.add(glow);
+                body.userData = { isSpinner: true, spinRate: -0.01 };
+            }
             else {
+                // Generic Sphere
                 const fruit = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshStandardMaterial({ color: def.color }));
                 fruit.position.y = 0.4; group.add(fruit);
             }
@@ -367,6 +766,136 @@
             group.castShadow = true;
             group.children.forEach(c => c.castShadow = true);
             return group;
+        };
+
+        const refreshShopItems = () => {
+            if(!scene) return;
+            shopItems.forEach(item => scene.remove(item.base));
+            shopItems = [];
+            
+            const currentWorld = window.GAME_STATE.currentWorld;
+
+            let lowerTier, upperTier;
+            if (currentWorld === 'PLAINS') { lowerTier = 1; upperTier = 2; }
+            else if (currentWorld === 'SNOW') { lowerTier = 3; upperTier = 4; }
+            else if (currentWorld === 'SPACE') { lowerTier = 5; upperTier = 5; } // Only one tier for space for now
+
+            const renderRow = (tier, zPos, yOffset) => {
+                const entries = Object.entries(CROP_DEFS).filter(([, def]) => def.tier === tier);
+                const spacing = 2.8;
+                // Update startX because we moved shop to x=24
+                const startX = 24 - ((entries.length - 1) * spacing) / 2;
+
+                entries.forEach(([id, def], i) => {
+                    const itemGroup = new THREE.Group();
+                    itemGroup.position.set(startX + (i * spacing), 0.5 + yOffset, zPos);
+
+                    const pedestalMat = (currentWorld === 'SPACE') ? new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.7, roughness: 0.2 }) : new THREE.MeshStandardMaterial({ map: woodTexture });
+                    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16), pedestalMat);
+                    pedestal.position.y = 0.2; itemGroup.add(pedestal);
+
+                    const plantPreview = createPlantMesh(id, 3);
+                    plantPreview.scale.setScalar(0.6); plantPreview.position.y = 0.6; itemGroup.add(plantPreview);
+
+                    const signMat = (currentWorld === 'SPACE') ? new THREE.MeshStandardMaterial({ color: 0x334155 }) : new THREE.MeshStandardMaterial({ map: woodTexture });
+                    const sign = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 0.1), signMat);
+                    sign.position.set(0, 1.8, -1); sign.rotation.x = 0.1; itemGroup.add(sign);
+
+                    const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.1), new THREE.MeshBasicMaterial({ map: createSignTexture(def.name, def.cost, def.sell), transparent: true }));
+                    textPlane.position.z = 0.06; sign.add(textPlane);
+
+                    const postMat = (currentWorld === 'SPACE') ? new THREE.MeshStandardMaterial({ color: 0x64748b }) : new THREE.MeshStandardMaterial({ map: woodTexture });
+                    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 0.1), postMat);
+                    post.position.set(0, 1, -1); itemGroup.add(post);
+
+                    itemGroup.userData = { type: 'shopItem', itemId: id, cost: def.cost };
+                    pedestal.userData = { parent: itemGroup }; plantPreview.userData = { parent: itemGroup };
+                    sign.userData = { parent: itemGroup }; textPlane.userData = { parent: itemGroup };
+                    post.userData = { parent: itemGroup };
+
+                    scene.add(itemGroup);
+                    // Add to array, store Y for simple bobbing anim
+                    shopItems.push({ mesh: plantPreview, base: itemGroup, baseY: 0.6 });
+                });
+            };
+
+            // Render Lower (Basic/Current Tier)
+            renderRow(lowerTier, 0, 0);
+            
+            // Render Upper (Exotic/Next Tier) only if tiers differ
+            if (lowerTier !== upperTier) {
+                renderRow(upperTier, -5, 2.5); 
+            }
+        };
+
+        const createPortalMesh = () => {
+            const group = new THREE.Group();
+            const pFrameGeo = new THREE.TorusGeometry(3, 0.3, 16, 32);
+            const pFrameMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8, roughness: 0.2 });
+            const pFrame = new THREE.Mesh(pFrameGeo, pFrameMat);
+            pFrame.position.y = 3.5; group.add(pFrame);
+            const pGlowGeo = new THREE.CircleGeometry(2.8, 32);
+            const pGlowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.95, side: THREE.DoubleSide, fog: false });
+            const pGlow = new THREE.Mesh(pGlowGeo, pGlowMat);
+            pGlow.position.y = 3.5; group.add(pGlow);
+            group.userData = { type: 'portal' };
+            pFrame.userData = { parent: group }; pGlow.userData = { parent: group };
+            return group;
+        }
+
+        const createUpgradeStand = () => {
+            const group = new THREE.Group();
+            group.userData = { type: 'upgradeStand' };
+            
+            // Stand Base
+            const standGeo = new THREE.BoxGeometry(4, 1, 2);
+            const standMat = new THREE.MeshStandardMaterial({ map: woodTexture });
+            const stand = new THREE.Mesh(standGeo, standMat);
+            stand.position.y = 0.5;
+            stand.userData = { parent: group };
+            group.add(stand);
+
+            // NPC (The Guy)
+            const npcGroup = new THREE.Group();
+            npcGroup.position.set(0, 1, -1);
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 1.2), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
+            body.position.y = 0.6; 
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.35), new THREE.MeshStandardMaterial({ color: 0xffccaa }));
+            head.position.y = 1.4;
+            npcGroup.add(body); npcGroup.add(head);
+            group.add(npcGroup);
+
+            // Sack of Fertilizer
+            const sackGeo = new THREE.DodecahedronGeometry(0.6);
+            const sackMat = new THREE.MeshStandardMaterial({ color: 0x854d0e });
+            const sack = new THREE.Mesh(sackGeo, sackMat);
+            sack.position.set(0, 1.3, 0);
+            sack.scale.set(1, 0.8, 0.8);
+            sack.userData = { parent: group, isSack: true };
+            group.add(sack);
+
+            // Floating Sign above Sack
+            const signGeo = new THREE.PlaneGeometry(3, 1.5);
+            const signMat = new THREE.MeshBasicMaterial({ map: createUpgradeSignTexture(), transparent: true, side: THREE.DoubleSide });
+            const sign = new THREE.Mesh(signGeo, signMat);
+            sign.position.set(0, 3, 0);
+            group.userData.signText = sign; // Store ref to update later
+            group.add(sign);
+
+            return group;
+        }
+
+        const buyUpgrade = () => {
+            const cost = getUpgradeCost();
+            if (window.GAME_STATE.money >= cost) {
+                const newState = { ...window.GAME_STATE };
+                newState.money -= cost;
+                newState.growthLevel++;
+                window.updateGameState(newState);
+                showMessage(`Speed Upgraded! Level ${newState.growthLevel}`);
+            } else {
+                showMessage(`Need $${cost.toLocaleString()} for upgrade!`);
+            }
         };
 
         const init3D = () => {
@@ -387,19 +916,15 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
             container.appendChild(renderer.domElement);
 
-            // Textures
             textureLoader = new THREE.TextureLoader();
             grassTexture = textureLoader.load('https://threejs.org/examples/textures/terrain/grasslight-big.jpg');
             grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping; grassTexture.repeat.set(25, 25);
-            
-            // Generated Snow Texture to prevent black texture glitches
             snowTexture = createSnowTexture();
-            
+            obsidianTexture = createObsidianTexture(); // Obsidian Texture
             dirtTexture = textureLoader.load('https://threejs.org/examples/textures/terrain/backgrounddetailed6.jpg');
             dirtTexture.wrapS = dirtTexture.wrapT = THREE.RepeatWrapping; dirtTexture.repeat.set(2, 2);
             woodTexture = textureLoader.load('https://threejs.org/examples/textures/crate.gif');
 
-            // Lights
             const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
             scene.add(hemiLight);
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -408,7 +933,6 @@
             dirLight.shadow.mapSize.width = 2048; dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
-            // Ground
             const groundGeo = new THREE.PlaneGeometry(200, 200);
             const groundMat = new THREE.MeshStandardMaterial({ map: grassTexture, roughness: 0.8 });
             groundMesh = new THREE.Mesh(groundGeo, groundMat);
@@ -416,13 +940,15 @@
             groundMesh.receiveShadow = true;
             scene.add(groundMesh);
 
-            // Trees
-            const treeGeo = new THREE.ConeGeometry(1.5, 4, 8);
-            const trunkGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
-            const trunkMat = new THREE.MeshStandardMaterial({ map: woodTexture });
-            
-            const shopPos = new THREE.Vector3(15, 0, 0);
-            const portalPos = new THREE.Vector3(28, 0, 0);
+            // Init floraGroup for trees/asteroids
+            floraGroup = new THREE.Group();
+            scene.add(floraGroup);
+            floraPositions = [];
+
+            const shopPos = new THREE.Vector3(24, 0, 0); // New Shop Pos
+            const upgradePos = new THREE.Vector3(12, 0, 0); // New Upgrade Pos
+            const portalRPos = new THREE.Vector3(36, 0, 0);
+            const portalLPos = new THREE.Vector3(-15, 0, 0);
             
             for (let i = 0; i < 30; i++) {
                 let validPos = false;
@@ -433,23 +959,16 @@
                     const radius = 15 + Math.random() * 25;
                     tx = Math.cos(angle) * radius; tz = Math.sin(angle) * radius;
                     const pos = new THREE.Vector3(tx, 0, tz);
-                    if (pos.distanceTo(shopPos) > 8 && pos.distanceTo(portalPos) > 6) validPos = true;
+                    if (pos.distanceTo(shopPos) > 8 && pos.distanceTo(portalRPos) > 6 && pos.distanceTo(portalLPos) > 6 && pos.distanceTo(upgradePos) > 6) validPos = true;
                     attempts++;
                 }
                 if (validPos) {
-                    const treeGroup = new THREE.Group();
-                    const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.castShadow = true; treeGroup.add(trunk);
-                    const treeMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.9 });
-                    treeMaterials.push(treeMat); 
-                    const leaves = new THREE.Mesh(treeGeo, treeMat); leaves.position.y = 2.0; leaves.castShadow = true; treeGroup.add(leaves);
-                    treeGroup.position.set(tx, 0.5, tz);
                     const s = 0.8 + Math.random() * 0.4;
-                    treeGroup.scale.set(s,s,s);
-                    scene.add(treeGroup);
+                    floraPositions.push({ pos: new THREE.Vector3(tx, 0, tz), scale: s });
                 }
             }
+            generateFlora(); // Initial generation
 
-            // Garden Plots
             const frameGeo = new THREE.BoxGeometry(2, 0.3, 2);
             const frameMat = new THREE.MeshStandardMaterial({ map: woodTexture }); 
             const dirtGeo = new THREE.BoxGeometry(1.8, 0.35, 1.8);
@@ -468,7 +987,6 @@
                 }
             }
 
-            // Crate
             const crateGroup = new THREE.Group();
             crateGroup.position.set(-5, 0, 0);
             const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshStandardMaterial({ map: woodTexture }));
@@ -478,33 +996,40 @@
             crateMesh = crateGroup;
             scene.add(crateGroup);
 
-            // Shop Base
+            // New Upgrade Area
+            upgradeStandMesh = createUpgradeStand();
+            upgradeStandMesh.position.set(12, 0, 0);
+            scene.add(upgradeStandMesh);
+
             const shopGroup = new THREE.Group();
-            shopGroup.position.set(15, 0, 0);
+            shopGroup.position.set(24, 0, 0); // Move shop to x=24
             scene.add(shopGroup);
             const stand = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 5), new THREE.MeshStandardMaterial({ map: woodTexture }));
             stand.position.y = 0.25; stand.receiveShadow = true; shopGroup.add(stand);
-
-            // Portal
-            const portalGroup = new THREE.Group();
-            portalGroup.position.set(28, 0, 0);
-            const pFrameGeo = new THREE.TorusGeometry(3, 0.3, 16, 32);
-            const pFrameMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8, roughness: 0.2 });
-            const pFrame = new THREE.Mesh(pFrameGeo, pFrameMat);
-            pFrame.position.y = 3.5; portalGroup.add(pFrame);
-            const pGlowGeo = new THREE.CircleGeometry(2.8, 32);
-            const pGlowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
-            const pGlow = new THREE.Mesh(pGlowGeo, pGlowMat);
-            pGlow.position.y = 3.5; portalGroup.add(pGlow);
-            portalGroup.userData = { type: 'portal' };
-            pFrame.userData = { parent: portalGroup }; pGlow.userData = { parent: portalGroup };
-            portalMesh = portalGroup;
-            scene.add(portalGroup);
-
-            // Shop Items
-            refreshShopItems(1);
             
-            // Arrow Right (To Portal)
+            // Upper Shelf Geometry
+            const standUpper = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 4), new THREE.MeshStandardMaterial({ map: woodTexture }));
+            standUpper.position.set(0, 2.75, -5); standUpper.receiveShadow = true; shopGroup.add(standUpper);
+            // Support columns
+            const suppL = new THREE.Mesh(new THREE.BoxGeometry(1, 2.5, 3), new THREE.MeshStandardMaterial({ map: woodTexture }));
+            suppL.position.set(-5.5, 1.25, -5); shopGroup.add(suppL);
+            const suppR = new THREE.Mesh(new THREE.BoxGeometry(1, 2.5, 3), new THREE.MeshStandardMaterial({ map: woodTexture }));
+            suppR.position.set(5.5, 1.25, -5); shopGroup.add(suppR);
+
+            // Two Portals
+            portalRightMesh = createPortalMesh();
+            portalRightMesh.position.set(36, 0, 0); // Moved further right
+            portalRightMesh.userData.isRight = true;
+            scene.add(portalRightMesh);
+
+            portalLeftMesh = createPortalMesh();
+            portalLeftMesh.position.set(-15, 0, 0);
+            portalLeftMesh.userData.isLeft = true;
+            scene.add(portalLeftMesh);
+
+            const loadingManager = new THREE.LoadingManager(() => { refreshShopItems(); });
+            textureLoader = new THREE.TextureLoader(loadingManager);
+            
             const arrowGeo = new THREE.ConeGeometry(0.5, 1, 4);
             const arrowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xfacc15, emissiveIntensity: 0.5 });
             shopArrowRight = new THREE.Mesh(arrowGeo, arrowMat);
@@ -512,6 +1037,13 @@
             shopArrowRight.position.set(22, 2, 0); 
             shopArrowRight.userData = { type: 'navPortal' };
             scene.add(shopArrowRight);
+
+            gardenArrowLeft = new THREE.Mesh(arrowGeo, arrowMat);
+            gardenArrowLeft.rotation.z = Math.PI / 2; 
+            gardenArrowLeft.position.set(-8, 2, 0);
+            gardenArrowLeft.userData = { type: 'navPortal' };
+            gardenArrowLeft.visible = false; 
+            scene.add(gardenArrowLeft);
 
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -521,99 +1053,8 @@
             window.addEventListener('mouseup', onMouseUp);
             window.addEventListener('resize', onResize);
             
+            refreshShopItems(); // Force initial load
             animate();
-        };
-
-        const updateEnvironmentVisuals = () => {
-            const isSnow = window.GAME_STATE.currentWorld === 'SNOW';
-            document.body.classList.toggle('snow-mode', isSnow);
-
-            if (groundMesh) {
-                if (isSnow) {
-                    groundMesh.material.map = snowTexture;
-                    groundMesh.material.color.setHex(0xffffff); 
-                    scene.background.setHex(0xcfd8dc); 
-                    scene.fog.color.setHex(0xcfd8dc);
-                } else {
-                    groundMesh.material.map = grassTexture;
-                    groundMesh.material.color.setHex(0xffffff);
-                    scene.background.setHex(0x87CEEB);
-                    scene.fog.color.setHex(0x87CEEB);
-                }
-                groundMesh.material.needsUpdate = true;
-            }
-
-            treeMaterials.forEach(mat => {
-                mat.color.setHex(isSnow ? 0xffffff : 0x166534);
-            });
-
-            if (shopArrowRight) shopArrowRight.visible = true;
-        };
-
-        const updateUIVisibility = () => {
-            const navLeft = document.getElementById('nav-left');
-            const navRight = document.getElementById('nav-right');
-            const tierBtn = document.getElementById('shop-tier-btn');
-            const view = window.GAME_STATE.targetView;
-            
-            navLeft.classList.add('hidden');
-            navRight.classList.add('hidden');
-            tierBtn.classList.add('hidden');
-
-            if (view === 'GARDEN') {
-                navRight.classList.remove('hidden'); 
-            } else if (view === 'SHOP') {
-                navLeft.classList.remove('hidden'); 
-                navRight.classList.remove('hidden'); 
-                if (window.GAME_STATE.currentWorld === 'PLAINS') {
-                    tierBtn.classList.remove('hidden');
-                }
-            } else if (view === 'PORTAL') {
-                navLeft.classList.remove('hidden'); 
-            }
-        };
-
-        const refreshShopItems = (tier) => {
-            shopItems.forEach(item => scene.remove(item.base));
-            shopItems = [];
-            const isSnow = window.GAME_STATE.currentWorld === 'SNOW';
-            const targetTier = isSnow ? 3 : tier; 
-            
-            const entries = Object.entries(CROP_DEFS).filter(([, def]) => {
-                if (isSnow) return def.world === 'SNOW';
-                return def.world === 'PLAINS' && def.tier === targetTier;
-            });
-            
-            const spacing = 2.8;
-            const startX = 15 - ((entries.length - 1) * spacing) / 2;
-
-            entries.forEach(([id, def], i) => {
-                const itemGroup = new THREE.Group();
-                itemGroup.position.set(startX + (i * spacing), 0.5, 0);
-
-                const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 0.4, 16), new THREE.MeshStandardMaterial({ map: woodTexture }));
-                pedestal.position.y = 0.2; itemGroup.add(pedestal);
-
-                const plantPreview = createPlantMesh(id, 3);
-                plantPreview.scale.setScalar(0.6); plantPreview.position.y = 0.6; itemGroup.add(plantPreview);
-
-                const sign = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 0.1), new THREE.MeshStandardMaterial({ map: woodTexture }));
-                sign.position.set(0, 1.8, -1); sign.rotation.x = 0.1; itemGroup.add(sign);
-
-                const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.1), new THREE.MeshBasicMaterial({ map: createSignTexture(def.name, def.cost, def.sell), transparent: true }));
-                textPlane.position.z = 0.06; sign.add(textPlane);
-
-                const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 0.1), new THREE.MeshStandardMaterial({ map: woodTexture }));
-                post.position.set(0, 1, -1); itemGroup.add(post);
-
-                itemGroup.userData = { type: 'shopItem', itemId: id, cost: def.cost };
-                pedestal.userData = { parent: itemGroup }; plantPreview.userData = { parent: itemGroup };
-                sign.userData = { parent: itemGroup }; textPlane.userData = { parent: itemGroup };
-                post.userData = { parent: itemGroup };
-
-                scene.add(itemGroup);
-                shopItems.push({ mesh: plantPreview, base: itemGroup });
-            });
         };
 
         const onResize = () => {
@@ -648,8 +1089,42 @@
                     const data = interactiveObj.userData;
                     if (data.type === 'crate') toggleInventory();
                     if (data.type === 'shopItem') buyItem(data.itemId, data.cost);
-                    if (data.type === 'navPortal') { window.GAME_STATE.targetView = 'PORTAL'; updateUIVisibility(); }
-                    if (data.type === 'portal') handlePortalInteraction();
+                    
+                    if (data.type === 'upgradeStand') {
+                        buyUpgrade();
+                    }
+
+                    if (data.type === 'navPortal') { 
+                        const isRightArrow = (interactiveObj === shopArrowRight);
+                        const isLeftArrow = (interactiveObj === gardenArrowLeft);
+                        
+                        // New Logic for arrows based on state
+                        // Garden -> Right -> Upgrades
+                        // Upgrades -> Right -> Shop
+                        // Shop -> Right -> Portal R
+                        // Portal R -> Left -> Shop... etc
+                        
+                        // BUT, to keep it simple with existing targetView logic:
+                        // We will map clicks to state transitions directly
+                        
+                        const state = window.GAME_STATE;
+                        const world = state.currentWorld;
+                        
+                        if(isRightArrow) {
+                            if (state.targetView === 'GARDEN') state.targetView = 'UPGRADES';
+                            else if (state.targetView === 'UPGRADES') state.targetView = 'SHOP';
+                            else if (state.targetView === 'SHOP') state.targetView = 'PORTAL_R';
+                        } 
+                        else if(isLeftArrow) {
+                            if (state.targetView === 'SHOP') state.targetView = 'UPGRADES';
+                            else if (state.targetView === 'UPGRADES') state.targetView = 'GARDEN';
+                            else if (state.targetView === 'GARDEN') state.targetView = 'PORTAL_L';
+                        }
+                        
+                        window.GAME_STATE.portalUnlocked = false; 
+                        updateUIVisibility(); 
+                    }
+                    if (data.type === 'portal') handlePortalInteraction(interactiveObj);
                     if (data.type === 'plot') {
                         const grid = getCurrentGrid();
                         const gridData = grid[data.gx][data.gz];
@@ -660,30 +1135,46 @@
             }
         };
 
-        const handlePortalInteraction = () => {
-            if (window.GAME_STATE.portalUnlocked) {
-                switchWorld();
-            } else {
-                if (window.GAME_STATE.money >= 25000) {
-                    const newState = { ...window.GAME_STATE };
-                    newState.money -= 25000;
-                    newState.portalUnlocked = true;
-                    window.updateGameState(newState);
-                    showMessage("Portal Unlocked! Click to enter.");
+        const handlePortalInteraction = (portalObj) => {
+            const currentWorld = window.GAME_STATE.currentWorld;
+            let nextWorld, cost = 0;
+            
+            if (portalObj === portalRightMesh) {
+                if (currentWorld === 'PLAINS') { nextWorld = 'SNOW'; cost = 25000; }
+                else if (currentWorld === 'SNOW') { nextWorld = 'SPACE'; cost = 5000000; }
+                
+                const isUnlocked = (currentWorld === 'PLAINS' ? window.GAME_STATE.unlockedSnow : window.GAME_STATE.unlockedSpace);
+                
+                if (isUnlocked) {
+                    switchWorld(nextWorld);
                 } else {
-                    showMessage("Locked! Cost: $25,000 to unlock.");
+                    if (window.GAME_STATE.money >= cost) {
+                        const newState = { ...window.GAME_STATE };
+                        newState.money -= cost;
+                        if(currentWorld === 'PLAINS') newState.unlockedSnow = true;
+                        if(currentWorld === 'SNOW') newState.unlockedSpace = true;
+                        window.updateGameState(newState);
+                        showMessage(`Portal Unlocked! Click to enter.`);
+                    } else {
+                        showMessage(`Locked! Cost: $${cost.toLocaleString()} to unlock.`);
+                    }
                 }
+            } 
+            else if (portalObj === portalLeftMesh) {
+                if (currentWorld === 'SNOW') nextWorld = 'PLAINS';
+                else if (currentWorld === 'SPACE') nextWorld = 'SNOW';
+                switchWorld(nextWorld);
             }
         }
 
-        const switchWorld = () => {
-            const isSnow = window.GAME_STATE.currentWorld === 'SNOW';
-            const newWorld = isSnow ? 'PLAINS' : 'SNOW';
+        const switchWorld = (newWorld) => {
             window.GAME_STATE.currentWorld = newWorld;
             window.GAME_STATE.targetView = 'GARDEN';
-            showMessage(`Traveling to ${newWorld === 'SNOW' ? 'The Frozen Lands' : 'The Plains'}...`, 4000);
+            window.GAME_STATE.shopTier = (newWorld === 'SNOW') ? 3 : (newWorld === 'SPACE' ? 5 : 1);
+            
+            showMessage(`Traveling to ${newWorld}...`, 4000);
             updateEnvironmentVisuals();
-            refreshShopItems(window.GAME_STATE.shopTier);
+            refreshShopItems(); 
             updateUIVisibility();
             plots.forEach(p => {
                 if (p.userData.plantMesh) {
@@ -726,35 +1217,6 @@
             bar.classList.toggle('translate-y-40', !inventoryOpen);
         };
 
-        const renderInventory = () => {
-            const bar = document.getElementById('inventory-bar');
-            bar.innerHTML = '';
-            let hasSeeds = false;
-            Object.entries(window.GAME_STATE.inventory).forEach(([key, count]) => {
-                if (count > 0 && key.includes('_seed')) {
-                    hasSeeds = true;
-                    const cropType = key.replace('_seed', '');
-                    const def = CROP_DEFS[cropType];
-                    const itemDiv = document.createElement('div');
-                    itemDiv.className = "group flex-shrink-0 w-24 h-24 bg-gray-800 rounded-2xl border-2 border-gray-600 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing hover:bg-gray-700 transition-all hover:scale-105 hover:border-green-500 shadow-lg select-none relative";
-                    itemDiv.innerHTML = `
-                        <div class="text-4xl mb-1 filter drop-shadow-md">${def.icon || '🌱'}</div>
-                        <div class="text-xs font-bold text-gray-300">${def.name}</div>
-                        <div class="absolute -top-2 -right-2 bg-yellow-500 text-black text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-800">${count}</div>
-                    `;
-                    itemDiv.addEventListener('mousedown', (e) => {
-                        e.preventDefault(); isDragging = true; dragItemType = cropType;
-                        const ghost = document.getElementById('drag-ghost');
-                        ghost.style.display = 'flex'; ghost.style.backgroundColor = '#' + def.color.toString(16);
-                        ghost.textContent = def.icon || '🌱'; ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
-                        toggleInventory(); 
-                    });
-                    bar.appendChild(itemDiv);
-                }
-            });
-            if (!hasSeeds) bar.innerHTML = `<div class="text-gray-400 text-sm px-6 py-2 flex items-center"><span>Inventory Empty. Buy seeds at the Shop! &rarr;</span></div>`;
-        };
-
         const buyItem = (cropId, cost) => {
             if (window.GAME_STATE.money >= cost) {
                 const newState = { ...window.GAME_STATE };
@@ -771,14 +1233,14 @@
         const plantSeed = (x, z, cropType) => {
             const grid = getCurrentGrid();
             const def = CROP_DEFS[cropType];
-            if (def.world !== window.GAME_STATE.currentWorld) { showMessage(`This seed only grows in ${def.world === 'SNOW' ? 'Snow' : 'Plains'}!`); return; }
+            if (def.world !== window.GAME_STATE.currentWorld) { showMessage(`This seed only grows in ${def.world}!`); return; }
             if (grid[x][z].planted) { showMessage("Plot is occupied!"); return; }
             
             const newState = { ...window.GAME_STATE };
             const seedKey = cropType + '_seed';
             if (newState.inventory[seedKey] > 0) {
                 newState.inventory[seedKey]--;
-                const targetGrid = window.GAME_STATE.currentWorld === 'SNOW' ? newState.snowGrid : newState.plainsGrid;
+                const targetGrid = getCurrentGrid();
                 targetGrid[x][z] = { planted: cropType, stage: 0, plantTime: Date.now() };
                 window.updateGameState(newState);
                 showMessage("Planted!");
@@ -788,7 +1250,7 @@
         const sellPlant = (x, z, cropType, screenX, screenY) => {
             const def = CROP_DEFS[cropType];
             const newState = { ...window.GAME_STATE };
-            const targetGrid = window.GAME_STATE.currentWorld === 'SNOW' ? newState.snowGrid : newState.plainsGrid;
+            const targetGrid = getCurrentGrid();
             targetGrid[x][z] = { planted: null, stage: 0, plantTime: 0 };
             newState.money += def.sell;
             window.updateGameState(newState);
@@ -796,39 +1258,230 @@
             showMessage(`Harvested & Sold ${def.name}!`);
         };
 
-        document.getElementById('nav-left').addEventListener('click', () => { 
-            const view = window.GAME_STATE.targetView;
-            if (view === 'SHOP') window.GAME_STATE.targetView = 'GARDEN';
-            if (view === 'PORTAL') window.GAME_STATE.targetView = 'SHOP';
-            updateUIVisibility();
-        });
-        document.getElementById('nav-right').addEventListener('click', () => { 
-            const view = window.GAME_STATE.targetView;
-            if (view === 'GARDEN') window.GAME_STATE.targetView = 'SHOP';
-            else if (view === 'SHOP') window.GAME_STATE.targetView = 'PORTAL';
-            updateUIVisibility();
-            if(inventoryOpen) toggleInventory(); 
-        });
+        // --- Input Handling ---
+        let keyBufferInput = ''; 
+        const cheatCodeInput = 'haxxor';
         
-        document.getElementById('shop-tier-btn').addEventListener('click', () => {
-            if (window.GAME_STATE.currentWorld === 'SNOW') return; 
-            const next = (window.GAME_STATE.shopTier === 1) ? 2 : 1;
-            window.GAME_STATE.shopTier = next;
-            refreshShopItems(next);
-            showMessage(next === 2 ? "Exotic Tier" : "Basic Tier");
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            keyBufferInput += key;
+            if (keyBufferInput.length > cheatCodeInput.length) keyBufferInput = keyBufferInput.slice(-cheatCodeInput.length);
+            if (keyBufferInput === cheatCodeInput) {
+                document.getElementById('admin-panel').classList.remove('hidden');
+                showMessage("ADMIN MODE ENABLED", 1000);
+            }
+
+            const state = window.GAME_STATE;
+            const currentWorld = state.currentWorld;
+
+            // Updated navigation for new Upgrade Step
+            if (key === 'a') {
+                if (state.targetView === 'SHOP') { state.targetView = 'UPGRADES'; updateUIVisibility(); }
+                else if (state.targetView === 'UPGRADES') { state.targetView = 'GARDEN'; updateUIVisibility(); }
+                else if (state.targetView === 'PORTAL_R') { state.targetView = 'SHOP'; updateUIVisibility(); }
+                else if (state.targetView === 'PORTAL_L') { /* Leftmost */ }
+                else if (state.targetView === 'GARDEN' && (currentWorld === 'SNOW' || currentWorld === 'SPACE')) { state.targetView = 'PORTAL_L'; updateUIVisibility(); }
+            }
+            if (key === 'd') {
+                if (state.targetView === 'GARDEN') { state.targetView = 'UPGRADES'; updateUIVisibility(); if(inventoryOpen) toggleInventory(); }
+                else if (state.targetView === 'UPGRADES') { state.targetView = 'SHOP'; updateUIVisibility(); }
+                else if (state.targetView === 'SHOP' && currentWorld !== 'SPACE') { state.targetView = 'PORTAL_R'; updateUIVisibility(); }
+                else if (state.targetView === 'PORTAL_L') { state.targetView = 'GARDEN'; updateUIVisibility(); }
+            }
+            // W / S Logic
+            if (key === 'w') {
+                if (state.targetView === 'PORTAL_R') handlePortalInteraction(portalRightMesh);
+                else if (state.targetView === 'PORTAL_L') handlePortalInteraction(portalLeftMesh);
+                else if (state.targetView === 'UPGRADES') buyUpgrade();
+                else if (state.targetView === 'GARDEN') toggleInventory();
+                else if (state.targetView === 'SHOP') {
+                    // Go UP
+                    const current = window.GAME_STATE.shopTier;
+                    const next = (current % 2 !== 0) ? current + 1 : current; 
+                    window.GAME_STATE.shopTier = next;
+                    updateUIVisibility();
+                }
+            }
+            if (key === 's') {
+                if (state.targetView === 'SHOP') {
+                    // Go DOWN
+                    const current = window.GAME_STATE.shopTier;
+                    const next = (current % 2 === 0) ? current - 1 : current; 
+                    window.GAME_STATE.shopTier = next;
+                    updateUIVisibility();
+                }
+            }
         });
+
+        // UI Listeners
+        const setupUIListeners = () => {
+            const nl = document.getElementById('nav-left');
+            const nr = document.getElementById('nav-right');
+            const tb = document.getElementById('shop-tier-btn');
+            
+            // Admin Panel Listeners
+            const adminPanel = document.getElementById('admin-panel');
+            const adminHeader = document.getElementById('admin-header');
+            const adminBody = document.getElementById('admin-body');
+            
+            // Minimize
+            document.getElementById('admin-minimize').addEventListener('click', (e) => {
+                e.stopPropagation(); 
+                adminBody.classList.toggle('hidden');
+            });
+            
+            // Draggable Logic
+            let isDraggingPanel = false;
+            let dragOffsetX = 0;
+            let dragOffsetY = 0;
+
+            adminHeader.style.cursor = 'grab';
+
+            adminHeader.addEventListener('mousedown', (e) => {
+                isDraggingPanel = true;
+                dragOffsetX = e.clientX - adminPanel.offsetLeft;
+                dragOffsetY = e.clientY - adminPanel.offsetTop;
+                adminHeader.style.cursor = 'grabbing';
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isDraggingPanel) {
+                    e.preventDefault(); 
+                    adminPanel.style.left = (e.clientX - dragOffsetX) + 'px';
+                    adminPanel.style.top = (e.clientY - dragOffsetY) + 'px';
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (isDraggingPanel) {
+                    isDraggingPanel = false;
+                    adminHeader.style.cursor = 'grab';
+                }
+            });
+            
+            // Admin Actions
+            document.getElementById('admin-add-money').addEventListener('click', () => {
+                const amt = parseFloat(document.getElementById('admin-money-input').value);
+                if(!isNaN(amt)) {
+                    window.GAME_STATE.money += amt;
+                    window.updateGameState(window.GAME_STATE);
+                }
+            });
+            
+            document.getElementById('admin-set-money').addEventListener('click', () => {
+                const amt = parseFloat(document.getElementById('admin-money-input').value);
+                if(!isNaN(amt)) {
+                    window.GAME_STATE.money = amt;
+                    window.updateGameState(window.GAME_STATE);
+                    showMessage("Money Set to $" + amt);
+                }
+            });
+            
+            document.getElementById('admin-inf-money').addEventListener('click', () => {
+                window.GAME_STATE.money = Infinity;
+                window.updateGameState(window.GAME_STATE);
+            });
+
+            document.querySelectorAll('.admin-world-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const world = e.target.dataset.world;
+                    if(window.GAME_STATE.currentWorld !== world) {
+                        window.GAME_STATE.currentWorld = world;
+                        window.GAME_STATE.targetView = 'GARDEN';
+                        
+                        let shopTier;
+                        if (world === 'SNOW') shopTier = 3;
+                        else if (world === 'SPACE') shopTier = 5;
+                        else shopTier = 1;
+
+                        window.GAME_STATE.shopTier = shopTier;
+                        
+                        updateEnvironmentVisuals();
+                        refreshShopItems();
+                        updateUIVisibility();
+                        
+                        plots.forEach(p => {
+                            if (p.userData.plantMesh) {
+                                p.remove(p.userData.plantMesh);
+                                p.userData.plantMesh = undefined;
+                                p.userData.plantType = null;
+                            }
+                        });
+                        
+                        window.updateGameState(window.GAME_STATE);
+                        showMessage("Warped to " + world);
+                    }
+                });
+            });
+            
+            // Regular Navigation with new steps
+            if(nl) nl.addEventListener('click', () => { 
+                const view = window.GAME_STATE.targetView;
+                const currentWorld = window.GAME_STATE.currentWorld;
+                
+                if (view === 'SHOP') window.GAME_STATE.targetView = 'UPGRADES';
+                else if (view === 'UPGRADES') window.GAME_STATE.targetView = 'GARDEN';
+                else if (view === 'PORTAL_R') window.GAME_STATE.targetView = 'SHOP';
+                else if (view === 'GARDEN') {
+                    if (currentWorld !== 'PLAINS') window.GAME_STATE.targetView = 'PORTAL_L';
+                }
+                updateUIVisibility();
+            });
+
+            if(nr) nr.addEventListener('click', () => { 
+                const view = window.GAME_STATE.targetView;
+                const currentWorld = window.GAME_STATE.currentWorld;
+                
+                if (view === 'GARDEN') window.GAME_STATE.targetView = 'UPGRADES';
+                else if (view === 'UPGRADES') window.GAME_STATE.targetView = 'SHOP';
+                else if (view === 'SHOP') {
+                    if (currentWorld !== 'SPACE') window.GAME_STATE.targetView = 'PORTAL_R';
+                }
+                else if (view === 'PORTAL_L') window.GAME_STATE.targetView = 'GARDEN';
+                
+                updateUIVisibility();
+                if(inventoryOpen) toggleInventory(); 
+            });
+
+            if(tb) tb.addEventListener('click', () => {
+                const current = window.GAME_STATE.shopTier;
+                const currentWorld = window.GAME_STATE.currentWorld;
+                let next = current;
+                if (currentWorld === 'PLAINS') next = (current === 1) ? 2 : 1;
+                else if (currentWorld === 'SNOW') next = (current === 3) ? 4 : 3;
+
+                window.GAME_STATE.shopTier = next;
+                updateUIVisibility();
+                refreshShopItems(); 
+            });
+        };
+        setupUIListeners();
 
         const animate = () => {
             requestAnimationFrame(animate);
             const time = Date.now();
             let targetPos, targetLook;
+            const currentWorld = window.GAME_STATE.currentWorld;
+
             if (window.GAME_STATE.targetView === 'GARDEN') {
                 targetPos = new THREE.Vector3(0, 8, 8); targetLook = new THREE.Vector3(0, 0, -1);
+            } else if (window.GAME_STATE.targetView === 'UPGRADES') {
+                targetPos = new THREE.Vector3(12, 6, 8); targetLook = new THREE.Vector3(12, 1, 0);
             } else if (window.GAME_STATE.targetView === 'SHOP') {
-                targetPos = new THREE.Vector3(15, 5, 8); targetLook = new THREE.Vector3(15, 1, 0);
-            } else { 
-                targetPos = new THREE.Vector3(25, 4, 6); targetLook = new THREE.Vector3(28, 3, 0);
+                const isUpper = (window.GAME_STATE.shopTier % 2 === 0);
+                if (isUpper && (currentWorld === 'PLAINS' || currentWorld === 'SNOW')) {
+                    targetPos = new THREE.Vector3(24, 8, 4); 
+                    targetLook = new THREE.Vector3(24, 3.5, -6);
+                } else {
+                    targetPos = new THREE.Vector3(24, 6, 9); 
+                    targetLook = new THREE.Vector3(24, 1, 0);
+                }
+            } else if (window.GAME_STATE.targetView === 'PORTAL_R') {
+                targetPos = new THREE.Vector3(34, 4, 6); targetLook = new THREE.Vector3(36, 3, 0);
+            } else if (window.GAME_STATE.targetView === 'PORTAL_L') {
+                targetPos = new THREE.Vector3(-12, 4, 6); targetLook = new THREE.Vector3(-15, 3, 0);
             }
+            
             camera.position.lerp(targetPos, 0.04);
             const currentLook = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).add(camera.position);
             currentLook.lerp(targetLook, 0.04);
@@ -836,21 +1489,35 @@
 
             shopItems.forEach(item => {
                 item.mesh.rotation.y += 0.015;
-                item.mesh.position.y = 1.0 + Math.sin(time * 0.002) * 0.1;
+                item.mesh.position.y = item.baseY + Math.sin(time * 0.002) * 0.1;
             });
             
-            if (shopArrowRight) shopArrowRight.position.x = 22 + Math.sin(time * 0.005) * 0.5;
+            // Arrow Animation
+            if (shopArrowRight) shopArrowRight.position.x = 22 + Math.sin(time * 0.005) * 0.5; // Moved with Upgrades area in mind?
+            // Actually Shop is at 24 now. Arrow should be between stages.
+            // Let's hide Arrows and rely on Camera move for 'next stage' feel, 
+            // except for explicit "Portal Ahead" arrows?
+            // Re-positioning arrows dynamically based on view in updateUIVisibility might be complex.
+            // Simplified: Just keep them relative to their areas.
+            if (shopArrowRight) shopArrowRight.position.x = 30 + Math.sin(time * 0.005) * 0.5; // Right of Shop(24)
+            if (gardenArrowLeft) gardenArrowLeft.position.x = -8 - Math.sin(time * 0.005) * 0.5;
 
-            if (portalMesh) {
-                const glowMesh = portalMesh.children[1];
-                if (window.GAME_STATE.portalUnlocked) {
-                    glowMesh.material.color.setHex(0x00ffff);
+            // Space decorations animation
+            spaceDecorations.forEach(d => {
+                if (d.userData.isSpinner) d.rotation.y += d.userData.spinRate || 0.005;
+            });
+            
+            if (portalRightMesh) {
+                const glowMesh = portalRightMesh.children[1];
+                if (portalRightMesh.visible) {
+                    const isUnlocked = (window.GAME_STATE.currentWorld === 'PLAINS' ? window.GAME_STATE.unlockedSnow : window.GAME_STATE.unlockedSpace);
+                    if(isUnlocked) glowMesh.material.opacity = 0.4 + Math.sin(time * 0.002) * 0.2; 
+                }
+            }
+            if (portalLeftMesh) {
+                const glowMesh = portalLeftMesh.children[1];
+                if (portalLeftMesh.visible) {
                     glowMesh.material.opacity = 0.4 + Math.sin(time * 0.002) * 0.2; 
-                    glowMesh.scale.setScalar(1 + Math.sin(time * 0.005) * 0.05);
-                } else {
-                    glowMesh.material.color.setHex(0x000000);
-                    glowMesh.material.opacity = 0.95;
-                    glowMesh.scale.setScalar(1);
                 }
             }
 
@@ -861,13 +1528,19 @@
             }
 
             const grid = getCurrentGrid();
+            const growthMult = getGrowthMultiplier(); // Apply upgrade
+
             plots.forEach(plotGroup => {
                 const gx = plotGroup.userData.gx; const gz = plotGroup.userData.gz;
                 const data = grid[gx][gz];
                 if (data.planted && data.stage < 3) {
                     const def = CROP_DEFS[data.planted];
                     const age = time - data.plantTime;
-                    const progress = Math.min(1, age / def.growthTime);
+                    // Apply Multiplier by reducing needed time effectively
+                    // or multiplying progress. 
+                    // Progress = age / time. Multiplier speeds it up -> Progress = (age * mult) / time
+                    const progress = Math.min(1, (age * growthMult) / def.growthTime);
+                    
                     const newStage = Math.floor(progress * 3);
                     if (newStage > data.stage) data.stage = newStage;
                 }
@@ -894,7 +1567,7 @@
                         meshGroup.position.y = 0.3 + Math.sin(time * 0.005) * 0.05;
                         meshGroup.children.forEach(c => {
                             if (c.material) c.material.emissive.setHex(0x333333);
-                             if (c.userData.isSpinner) c.rotation.y += 0.05;
+                             if (c.userData.isSpinner) c.rotation.y += c.userData.spinRate || 0.05;
                         });
                     } else {
                         meshGroup.children.forEach(c => {
