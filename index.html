@@ -502,8 +502,7 @@
             scene.add(portalGroup);
 
             // Shop Items
-            const loadingManager = new THREE.LoadingManager(() => { refreshShopItems(1); });
-            textureLoader = new THREE.TextureLoader(loadingManager);
+            refreshShopItems(1);
             
             // Arrow Right (To Portal)
             const arrowGeo = new THREE.ConeGeometry(0.5, 1, 4);
